@@ -1,24 +1,71 @@
 # Insurance Cost Regression
 
-A reproducible regression project that predicts medical insurance charges. It replaces notebook-wide mutation with a train/test-safe scikit-learn pipeline.
+[![Python checks](https://github.com/PrashantSinghpns/insurance-cost-regression/actions/workflows/ci.yml/badge.svg)](https://github.com/PrashantSinghpns/insurance-cost-regression/actions/workflows/ci.yml)
 
-## What changed from the notebook
+Model the relationship between recorded attributes and insurance charges using baseline and non-linear regressors.
 
-- BMI and charges retain decimal precision.
-- Category encoding, imputation, and scaling are fitted only on the training set through a pipeline.
-- No feature is selected from a target-derived bin created from all rows.
-- A mean baseline, Ridge regression, and random forest are compared with MAE, RMSE, and R².
+## Technical approach
 
-## Results
+1. Validate the CSV schema and normalize category whitespace and missing values.
+2. Reserve an 80/20 holdout with `random_state=42`.
+3. Compare Dummy mean, Ridge regression, and Random Forest using training-only cross-validation.
+4. Select the winner by mean CV RMSE; refit it on the training partition.
+5. Evaluate the selected model once on the test partition, then export the complete preprocessing/model pipeline.
 
-On the supplied 1,338-row CSV, the selected Random Forest achieved **MAE $2,413.91**, **RMSE $4,388.55**, and **R² 0.8759** on 268 held-out rows using an 80/20 split (`random_state=42`). This is a dataset estimate only; it must not be used to make insurance or medical decisions.
+Median imputation and scaling apply to numeric columns. Most-frequent imputation and one-hot encoding apply to categorical columns. `Pipeline` and `ColumnTransformer` keep learned transformations inside each CV fold. Reports include CV means and standard deviations, row counts, the input SHA-256, feature names, and package versions.
 
-## Run
+## Input contract
 
-```powershell
-python -m venv .venv  # Create an isolated environment.
-.\.venv\Scripts\python -m pip install -r requirements.txt  # Install dependencies.
-.\.venv\Scripts\python train.py --data "C:\Users\lenovo\Downloads\ML\insurance.csv"  # Train and evaluate the project.
+| Field group | Columns |
+|---|---|
+| Target | charges |
+| Numeric features | age, bmi, children |
+| Categorical features | sex, smoker, region |
+
+Rows with missing or nonpositive charges are excluded. Decimal BMI and charge values are preserved. This observational benchmark does not establish causal pricing relationships.
+
+The source CSV is not bundled. Use a permitted copy matching [the data contract](data/README.md). Duplicate entities or repeated observations require a group-aware split before using results outside this benchmark.
+
+## Run locally
+
+Use Python 3.11 or 3.12. From the repository root:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt pytest
+python train.py --data data/insurance.csv --output-dir artifacts
+python -m pytest -q
 ```
 
-The best pipeline and its evaluation report are written to `artifacts/`.
+On Windows PowerShell, replace activation with `.\.venv\Scripts\Activate.ps1`. An external CSV path also works.
+
+Batch inference expects the same feature columns without requiring the target:
+
+```bash
+python predict.py --model artifacts/model.joblib --data data/new_records.csv --output artifacts/predictions.csv
+```
+
+Only load model artifacts from a trusted source: joblib uses executable serialization. Reuse the package versions recorded by the training report when loading a fitted pipeline.
+
+## Outputs and evaluation
+
+| Output | Purpose |
+|---|---|
+| `artifacts/model.joblib` | Selected fitted preprocessing and model pipeline |
+| `artifacts/metrics.json` | CV comparisons, final holdout metrics, data fingerprint, environment versions |
+| `artifacts/predictions.csv` | Batch input records with a prediction column |
+
+Final evaluation includes **MAE, RMSE, and R2**. The raw dataset is unavailable in this checkout, so revised real-data scores are not claimed. Prior reported figures are retained in [the historical record](docs/HISTORICAL_RESULTS.md), with their limitations.
+
+## Repository map
+
+| File | Responsibility |
+|---|---|
+| `train.py` | Input contract, preprocessing, candidate models, training CLI |
+| `evaluation.py` | Training-fold selection, final evaluation, export, provenance |
+| `predict.py` | Batch inference with the saved pipeline |
+| `tests/` | Data contract and evaluation regression checks |
+| `.github/workflows/ci.yml` | Python 3.11/3.12 checks |
+
+This is a portfolio ML benchmark. It is not a validated production decision service. Further work should use verified data provenance, temporal/group validation where relevant, calibration or error analysis, and performance monitoring.
